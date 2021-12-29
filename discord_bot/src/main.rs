@@ -13,6 +13,7 @@ use serenity::{
         help_commands,
         macros::{command, group, help, hook},
         Args,
+        CommandError,
         CommandGroup,
         CommandResult,
         DispatchError,
@@ -245,7 +246,6 @@ async fn commands(ctx: &Context, msg: &Message) -> CommandResult {
 }
 
 use reqwest::Client as ReqClient;
-use serenity::framework::standard::CommandError;
 
 #[command]
 #[aliases("start")]
