@@ -28,9 +28,6 @@ use serenity::{
 };
 use tokio::sync::Mutex;
 
-// A container type is created for inserting into the Client's `data`, which
-// allows for data to be accessible across all events and framework commands, or
-// anywhere else that has a copy of the `data` Arc.
 struct ShardManagerContainer;
 
 impl TypeMapKey for ShardManagerContainer {
@@ -53,7 +50,7 @@ impl EventHandler for Handler {
 }
 
 #[group]
-#[commands(status)]
+#[commands(status, my_id)]
 struct General;
 
 #[group]
@@ -109,11 +106,6 @@ async fn unknown_command(_ctx: &Context, _msg: &Message, unknown_command_name: &
 }
 
 #[hook]
-async fn normal_message(_ctx: &Context, msg: &Message) {
-    println!("Message is not a command '{}'", msg.content);
-}
-
-#[hook]
 async fn delay_action(ctx: &Context, msg: &Message) {
     let _ = msg.react(ctx, '⏱').await;
 }
@@ -142,6 +134,14 @@ async fn main() {
             } else {
                 owners.insert(info.owner.id);
             }
+            match env::var("OWNER_IDS") {
+                Ok(owner_ids) => {
+                    for id in owner_ids.split(",") {
+                        owners.insert(UserId::from(id.parse::<u64>().unwrap()));
+                    }
+                }
+                Err(_) => {}
+            }
             match http.get_current_user().await {
                 Ok(bot_id) => (owners, bot_id.id),
                 Err(why) => panic!("Could not access the bot id: {:?}", why),
@@ -160,7 +160,6 @@ async fn main() {
         .before(before)
         .after(after)
         .unrecognised_command(unknown_command)
-        .normal_message(normal_message)
         .on_dispatch_error(dispatch_error)
         .help(&MY_HELP)
         .group(&GENERAL_GROUP)
@@ -192,9 +191,15 @@ async fn status(ctx: &Context, msg: &Message) -> CommandResult {
 }
 
 #[command]
+async fn my_id(ctx: &Context, msg: &Message) -> CommandResult {
+    let account_id = msg.author.id.0;
+    msg.channel_id.say(&ctx.http, format!("Your id is {}", account_id)).await?;
+
+    Ok(())
+}
+
+#[command]
 async fn latency(ctx: &Context, msg: &Message) -> CommandResult {
-    // The shard manager is an interface for mutating, stopping, restarting, and
-    // retrieving information about shards.
     let data = ctx.data.read().await;
 
     let shard_manager = match data.get::<ShardManagerContainer>() {
@@ -209,9 +214,6 @@ async fn latency(ctx: &Context, msg: &Message) -> CommandResult {
     let manager = shard_manager.lock().await;
     let runners = manager.runners.lock().await;
 
-    // Shards are backed by a "shard runner" responsible for processing events
-    // over the shard, so we'll get the information about the shard runner for
-    // the shard this command was sent over.
     let runner = match runners.get(&ShardId(ctx.shard_id)) {
         Some(runner) => runner,
         None => {
@@ -242,18 +244,39 @@ async fn commands(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
+use reqwest::Client as ReqClient;
+use serenity::framework::standard::CommandError;
+
 #[command]
 #[aliases("start")]
 async fn startup(ctx: &Context, msg: &Message) -> CommandResult {
-    msg.channel_id.say(&ctx.http, "Startup is not yet available").await?;
-
-    Ok(())
+    let endpoint = env::var("START_ENDPOINT")?;
+    let key = env::var("START_API_KEY")?;
+    match ReqClient::new().post(endpoint).header("x-api-key", key).send().await {
+        Ok(_) => {
+            msg.channel_id.say(&ctx.http, "Startup has begun").await?;
+            Ok(())
+        },
+        Err(e) => {
+            msg.channel_id.say(&ctx.http, "Startup has failed").await?;
+            Err(CommandError::from(e))
+        }
+    }
 }
 
 #[command]
 #[aliases("stop")]
 async fn shutdown(ctx: &Context, msg: &Message) -> CommandResult {
-    msg.channel_id.say(&ctx.http, "Shutdown is not yet available").await?;
-
-    Ok(())
+    let endpoint = env::var("STOP_ENDPOINT")?;
+    let key = env::var("STOP_API_KEY")?;
+    match ReqClient::new().post(endpoint).header("x-api-key", key).send().await {
+        Ok(_) => {
+            msg.channel_id.say(&ctx.http, "Shutdown has begun").await?;
+            Ok(())
+        },
+        Err(e) => {
+            msg.channel_id.say(&ctx.http, "Shutdown has failed").await?;
+            Err(CommandError::from(e))
+        }
+    }
 }

@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Scott Kirkpatrick <scottkirk@scottkirk.dev>"]
 edition = "2018"
 
+[dependencies]
+reqwest = "0.11"
+
 [dependencies.serenity]
 features = ["framework", "standard_framework", "rustls_backend"]
 version = "0.10"
