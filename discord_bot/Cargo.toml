@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["Scott Kirkpatrick <scottkirk@scottkirk.dev>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies.serenity]
+features = ["framework", "standard_framework", "rustls_backend"]
+version = "0.10"
 
-[dependencies]
+[dependencies.tokio]
+version = "1.0"
+features = ["macros", "rt-multi-thread"]
