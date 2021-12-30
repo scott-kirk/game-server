@@ -6,6 +6,9 @@ use std::{
     fmt::Write,
     sync::Arc,
 };
+use std::env::VarError;
+use std::num::ParseIntError;
+use chrono::{DateTime, DurationRound, SubsecRound, Utc};
 
 use serenity::prelude::*;
 use serenity::{
@@ -47,8 +50,39 @@ struct Handler;
 
 #[async_trait]
 impl EventHandler for Handler {
-    async fn ready(&self, _: Context, ready: Ready) {
+    async fn ready(&self, ctx: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
+        let status_channel_id = match env::var("STATUS_CHANNEL_ID")
+            .unwrap_or("x".to_string()).parse::<u64>() {
+            Ok(id) => id,
+            Err(e) => {
+                println!("Could not parse channel id {}", e);
+                return;
+            }
+        };
+        let channel = ChannelId(status_channel_id);
+        tokio::spawn(async move {
+            let old_msgs = channel.messages(&ctx, |b| b)
+                .await.unwrap();
+            channel.delete_messages(&ctx, old_msgs).await;
+            let mut status = get_status_string().await.unwrap_or("Unknown".to_string());
+            let msg_id = channel.send_message(&ctx.http, |m| {
+                m.embed(|e| {
+                        e.title("Server Status")
+                            .description(status)
+                    })
+            }).await.unwrap().id;
+            loop {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                status = get_status_string().await.unwrap_or("Unknown".to_string());
+                channel.edit_message(&ctx.http, msg_id, |m| {
+                    m.embed(|e| {
+                            e.title("Server Status")
+                                .description(status)
+                        })
+                }).await;
+            }
+        });
     }
 }
 
@@ -188,6 +222,11 @@ async fn main() {
 
 #[command]
 async fn status(ctx: &Context, msg: &Message) -> CommandResult {
+    msg.channel_id.say(&ctx.http, get_status_string().await?).await?;
+    Ok(())
+}
+
+async fn get_status_string() -> Result<String, CommandError> {
     let is_server_up = match mc_metrics::is_server_up().await {
         Ok(is_server_up) => is_server_up,
         Err(e) => {
@@ -200,8 +239,7 @@ async fn status(ctx: &Context, msg: &Message) -> CommandResult {
         false => "The server is DOWN :red_circle:",
     };
     if !is_server_up {
-        msg.channel_id.say(&ctx.http, server_liveness_msg).await?;
-        return Ok(());
+        return Ok(server_liveness_msg.to_string());
     }
     let player_count = match mc_metrics::get_player_count().await {
         Ok(player_count) => player_count,
@@ -220,11 +258,24 @@ async fn status(ctx: &Context, msg: &Message) -> CommandResult {
     };
     let avg_tps_msg = format!("Average Ticks per Second: {}, \
     Target Ticks per Second: 20", avg_tps);
-    let resp = format!("\n{}\n{}\n{}",
-                       server_liveness_msg, players_online_msg, avg_tps_msg);
-    msg.channel_id.say(&ctx.http, resp).await?;
 
-    Ok(())
+    let endpoint = env::var("SHUTDOWN_TIME_ENDPOINT")?;
+    let key = env::var("SHUTDOWN_TIME_API_KEY")?;
+    let shutdown_msg = match ReqClient::new().post(endpoint)
+        .header("x-api-key", key).send().await {
+        Ok(resp) => {
+            let body = resp.text().await
+                .map_err(|e| CommandError::from(e))?.trim_matches('"').to_string();
+            format!("{} until shutdown",
+                    fmt_duration_until_shutdown(body)?)
+        },
+        Err(e) => {
+            println!("Could not query server shutdown time {}", e);
+            "Unknown time until shutdown".to_string()
+        }
+    };
+
+    Ok(format!("\n{}\n{}\n{}\n{}", server_liveness_msg, players_online_msg, avg_tps_msg, shutdown_msg))
 }
 
 #[command]
@@ -282,6 +333,8 @@ async fn commands(ctx: &Context, msg: &Message) -> CommandResult {
 }
 
 use reqwest::Client as ReqClient;
+use serenity::model::id::ChannelId;
+use tokio::time::Duration;
 
 #[command]
 #[aliases("start")]
@@ -289,8 +342,12 @@ async fn startup(ctx: &Context, msg: &Message) -> CommandResult {
     let endpoint = env::var("START_ENDPOINT")?;
     let key = env::var("START_API_KEY")?;
     match ReqClient::new().post(endpoint).header("x-api-key", key).send().await {
-        Ok(_) => {
-            msg.channel_id.say(&ctx.http, "Startup has begun").await?;
+        Ok(resp) => {
+            let body = resp.text().await
+                .map_err(|e| CommandError::from(e))?.trim_matches('"').to_string();
+            let resp = format!("The server is starting and is scheduled to shut down in {}",
+                               fmt_duration_until_shutdown(body)?);
+            msg.channel_id.say(&ctx.http, resp).await?;
             Ok(())
         },
         Err(e) => {
@@ -298,6 +355,18 @@ async fn startup(ctx: &Context, msg: &Message) -> CommandResult {
             Err(CommandError::from(e))
         }
     }
+}
+
+fn fmt_duration_until_shutdown(shutdown_time_token: String) -> Result<String, CommandError> {
+    let shutdown_time = DateTime::parse_from_rfc3339(shutdown_time_token.as_str())
+        .map_err(|e| CommandError::from(e))?
+        .duration_round(chrono::Duration::minutes(1))
+        .map_err(|e| CommandError::from(e))?;
+    let now = Utc::now().duration_round(chrono::Duration::minutes(1))
+        .map_err(|e| CommandError::from(e))?;
+    let duration_until_shutdown = shutdown_time.signed_duration_since(now);
+    Ok(humantime::format_duration(duration_until_shutdown.to_std()
+        .map_err(|e| CommandError::from(e))?).to_string())
 }
 
 #[command]
