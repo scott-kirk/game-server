@@ -1,3 +1,5 @@
+mod mc_metrics;
+
 use std::{
     collections::{HashMap, HashSet},
     env,
@@ -186,7 +188,41 @@ async fn main() {
 
 #[command]
 async fn status(ctx: &Context, msg: &Message) -> CommandResult {
-    msg.channel_id.say(&ctx.http, "Status checks are not yet available").await?;
+    let is_server_up = match mc_metrics::is_server_up().await {
+        Ok(is_server_up) => is_server_up,
+        Err(e) => {
+            println!("Failed to capture server liveness {:?}", e);
+            false
+        }
+    };
+    let server_liveness_msg = match is_server_up {
+        true => "The server is UP :green_circle:",
+        false => "The server is DOWN :red_circle:",
+    };
+    if !is_server_up {
+        msg.channel_id.say(&ctx.http, server_liveness_msg).await?;
+        return Ok(());
+    }
+    let player_count = match mc_metrics::get_player_count().await {
+        Ok(player_count) => player_count,
+        Err(e) => {
+            println!("Failed to capture player count {:?}", e);
+            0
+        }
+    };
+    let players_online_msg = format!("Players online: {}", player_count);
+    let avg_tps = match mc_metrics::get_5m_tps().await {
+        Ok(avg_tps) => avg_tps,
+        Err(e) => {
+            println!("Failed to capture average tps {:?}", e);
+            0.0
+        }
+    };
+    let avg_tps_msg = format!("Average Ticks per Second: {}, \
+    Target Ticks per Second: 20", avg_tps);
+    let resp = format!("\n{}\n{}\n{}",
+                       server_liveness_msg, players_online_msg, avg_tps_msg);
+    msg.channel_id.say(&ctx.http, resp).await?;
 
     Ok(())
 }
