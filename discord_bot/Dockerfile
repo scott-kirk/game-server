@@ -3,39 +3,32 @@
 ####################################################################################################
 FROM rust:latest AS builder
 
-RUN update-ca-certificates
+ARG TARGET="armv7-unknown-linux-gnueabihf"
+ARG APP_NAME="discord_bot"
+ARG GITHUB_SSH_KEY=""
+RUN apt-get update
+RUN apt-get install g++-arm-linux-gnueabihf libc6-dev-armhf-cross -y
+RUN rustup target add $TARGET
+RUN mkdir /usr/src/$APP_NAME
+WORKDIR /usr/src/$APP_NAME
 
-ENV USER=discord_bot
-ENV UID=10001
+ENV CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc \
+    CC_armv7_unknown_linux_gnueabihf=arm-linux-gnueabihf-gcc \
+    CXX_armv7_unknown_linux_gnueabihf=arm-linux-gnueabihf-g++
 
-RUN adduser \
-    --disabled-password \
-    --gecos "" \
-    --home "/nonexistent" \
-    --shell "/sbin/nologin" \
-    --no-create-home \
-    --uid "${UID}" \
-    "${USER}"
+COPY Cargo.toml ./
+COPY ./src ./src
 
-
-WORKDIR /discord_bot
-
-COPY ./ .
-
-RUN cargo build --release
+RUN cargo build --release --target=$TARGET
+RUN groupadd -g 10001 -r $APP_NAME
+RUN useradd -r -g $APP_NAME -u 10001 $APP_NAME
 
 ####################################################################################################
 ## Final image
 ####################################################################################################
-FROM debian:buster-slim
+FROM arm32v7/debian
+ARG APP_NAME="discord_bot"
+ARG TARGET="armv7-unknown-linux-gnueabihf"
+COPY --from=builder /usr/src/$APP_NAME/target/$TARGET/release/$APP_NAME /discord_bot
 
-COPY --from=builder /etc/passwd /etc/passwd
-COPY --from=builder /etc/group /etc/group
-
-WORKDIR /discord_bot
-
-COPY --from=builder /myip/target/release/discord_bot ./
-
-USER discord_bot:discord_bot
-
-CMD ["/discord_bot/discord_bot"]
+CMD ["/discord_bot"]
