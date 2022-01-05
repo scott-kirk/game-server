@@ -234,9 +234,11 @@ async fn get_status_string() -> Result<String, CommandError> {
             false
         }
     };
+    let server_name = env::var("SERVER_HOSTNAME")
+        .unwrap_or("The server".to_string());
     let server_liveness_msg = match is_server_up {
-        true => "The server is UP :green_circle:",
-        false => "The server is DOWN :red_circle:",
+        true => server_name + " is UP :green_circle:",
+        false => server_name + " is DOWN :red_circle:",
     };
     if !is_server_up {
         return Ok(server_liveness_msg.to_string());
