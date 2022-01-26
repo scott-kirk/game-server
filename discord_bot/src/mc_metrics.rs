@@ -1,7 +1,6 @@
 use std::env;
 use std::env::VarError;
-use std::num::{ParseFloatError, ParseIntError};
-use std::str::ParseBoolError;
+use std::num::ParseFloatError;
 use reqwest::Client;
 use serde_json::Value;
 
@@ -14,7 +13,7 @@ pub enum MetricsError {
 
 #[derive(Debug)]
 struct ParseError {
-    details: String
+    _details: String
 }
 
 pub async fn get_player_count() -> Result<u32, MetricsError> {

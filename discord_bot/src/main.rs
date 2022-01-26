@@ -6,9 +6,7 @@ use std::{
     fmt::Write,
     sync::Arc,
 };
-use std::env::VarError;
-use std::num::ParseIntError;
-use chrono::{DateTime, DurationRound, SubsecRound, Utc};
+use chrono::{DateTime, DurationRound, Utc};
 
 use serenity::prelude::*;
 use serenity::{
@@ -262,9 +260,7 @@ async fn get_status_string() -> Result<String, CommandError> {
     Target Ticks per Second: 20", avg_tps);
 
     let endpoint = env::var("SHUTDOWN_TIME_ENDPOINT")?;
-    let key = env::var("SHUTDOWN_TIME_API_KEY")?;
-    let shutdown_msg = match ReqClient::new().post(endpoint)
-        .header("x-api-key", key).send().await {
+    let shutdown_msg = match ReqClient::new().get(endpoint).send().await {
         Ok(resp) => {
             let body = resp.text().await
                 .map_err(|e| CommandError::from(e))?.trim_matches('"').to_string();
@@ -342,8 +338,7 @@ use tokio::time::Duration;
 #[aliases("start")]
 async fn startup(ctx: &Context, msg: &Message) -> CommandResult {
     let endpoint = env::var("START_ENDPOINT")?;
-    let key = env::var("START_API_KEY")?;
-    match ReqClient::new().post(endpoint).header("x-api-key", key).send().await {
+    match ReqClient::new().get(endpoint).send().await {
         Ok(resp) => {
             let body = resp.text().await
                 .map_err(|e| CommandError::from(e))?.trim_matches('"').to_string();
@@ -375,8 +370,7 @@ fn fmt_duration_until_shutdown(shutdown_time_token: String) -> Result<String, Co
 #[aliases("stop")]
 async fn shutdown(ctx: &Context, msg: &Message) -> CommandResult {
     let endpoint = env::var("STOP_ENDPOINT")?;
-    let key = env::var("STOP_API_KEY")?;
-    match ReqClient::new().post(endpoint).header("x-api-key", key).send().await {
+    match ReqClient::new().get(endpoint).send().await {
         Ok(_) => {
             msg.channel_id.say(&ctx.http, "Shutdown has begun").await?;
             Ok(())
