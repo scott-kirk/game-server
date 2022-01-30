@@ -1,0 +1,14 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+runcmd:
+- while ! ec2-metadata --all; do :; done
+- REGION=$(ec2-metadata --availability-zone | awk '{print $2}' | sed 's/.$//')
+- INSTANCE_ID=$(ec2-metadata --instance-id | awk '{print $2}')
+- VOLUME_ID=$(aws ec2 describe-volumes --filters Name=tag:Name,Values=minecraft --region=$REGION --query "Volumes[0].VolumeId"  | tr -d '"')
+- aws ec2 attach-volume --volume-id $VOLUME_ID --device /dev/xvdf --instance-id $INSTANCE_ID --region $REGION
+- mkdir /data
+- retryCnt=15; waitTime=30; while true; do mount /dev/xvdf /data; if [ $? = 0 ] || [ $retryCnt -lt 1 ]; then echo File system mounted successfully; break; fi; echo File system not available, retrying to mount.; ((retryCnt--)); sleep $waitTime; done;
+- amazon-linux-extras install docker && service docker start
+- docker run -d -v /data/ddclient-config:/config --name ddclient linuxserver/ddclient
+- docker run -d -v /data/minecraft:/data -p 25565:25565 -p 9225:9225 -e EULA=TRUE -e ENFORCE_WHITELIST=TRUE -e USE_AIKAR_FLAGS=true -e MEMORY=1000M -m 1440M -e TYPE=PAPER --restart unless-stopped --name minecraft itzg/minecraft-server
