@@ -26,7 +26,7 @@ its shutdown time.
 Cost is nearly entirely from the ec2 while it's running. An Arm-based
 t4g.small is sufficient for at least 5 players if the MineCraft chunks
 are pre-generated. There is a configurable max cost allowed for the ec2
-that defaults to 0.008 cents an hour. Currently a 6Gb EBS volume is used
+that defaults to 0.8 cents an hour. Currently a 6Gb EBS volume is used
 for data storage.
 
 All required resources for server operation are in the terraform code,
